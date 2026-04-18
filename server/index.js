@@ -197,12 +197,26 @@ io.on('connection', (socket) => {
     // 2. Clean up rooms where this socket was involved
     for (const [roomId, room] of rooms.entries()) {
       if (room.sender === socket.id || room.receiver === socket.id) {
-        const otherId = room.sender === socket.id ? room.receiver : room.sender;
+        const isSender = room.sender === socket.id;
+        const otherId = isSender ? room.receiver : room.sender;
+        
         if (otherId) {
           io.to(otherId).emit('peer-disconnected');
         }
-        rooms.delete(roomId);
-        console.log(`Room ${roomId} deleted`);
+
+        // Logic for "Unlimited" sessions:
+        // - If SENDER leaves, always delete the room.
+        // - If RECEIVER leaves and room is unlimited, keep room open but clear receiver.
+        if (isSender) {
+          rooms.delete(roomId);
+          console.log(`Room ${roomId} deleted (Sender left)`);
+        } else if (room.unlimited) {
+          room.receiver = null;
+          console.log(`Room ${roomId} preserved (Receiver left, Unlimited session)`);
+        } else {
+          rooms.delete(roomId);
+          console.log(`Room ${roomId} deleted (Receiver left, Standard session)`);
+        }
       }
     }
   });

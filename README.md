@@ -34,6 +34,10 @@
 
 ## ✨ Features
 
+- **Hardened P2P Connectivity:**
+  - `Multi-Protocol Tunneling`: Integrated UDP, TCP, and TLS (port 443) TURN support to bypass even the most restrictive corporate firewalls and Deep Packet Inspection (DPI).
+  - `Connection Self-Healing`: Built-in connection watchdog that triggers automatic `RTCIceRestart` if a peer-to-peer connection hangs or drops.
+  - `Unlimited P2P Sessions`: Option to keep P2P rooms persistent until the sender manually closes them, allowing multiple receivers to join sequentially.
 - **True End-to-End Encryption (E2EE):** All encryption logic physically occurs inside the client's RAM using the Web Crypto API. The server never receives a decryption key.
 - **Dual Flow Architecture:**
   - `Server Relay Mode`: Encrypt files up to 100MB and host them temporarily on an automated Upstash Redis backend that strictly enforces Time-to-Live (TTL) deletion.
