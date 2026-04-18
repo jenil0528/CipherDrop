@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* Fonts imported in index.html for better performance and CSP compatibility */
 
 :root {
   --bg-primary: #06060e;
@@ -35,13 +35,18 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6, .hero-title, .logo h1, .pro-start-text {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  letter-spacing: -0.01em;
 }
 
 #root { min-height: 100vh; position: relative; }
