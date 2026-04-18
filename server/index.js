@@ -12,12 +12,21 @@ const app = express();
 const server = http.createServer(app);
 
 // Configure strong CORS
-const allowedOrigins = process.env.CLIENT_URL 
-  ? process.env.CLIENT_URL.split(',') 
-  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const clientUrl = process.env.CLIENT_URL || '';
+const isWildcard = clientUrl === '*';
+const allowedOrigins = isWildcard 
+  ? [] 
+  : clientUrl 
+    ? clientUrl.split(',').map(s => s.trim())
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173'];
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow all origins if wildcard is set
+    if (isWildcard) {
+      callback(null, true);
+      return;
+    }
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
