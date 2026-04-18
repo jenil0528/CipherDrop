@@ -15,34 +15,56 @@ export default function FileDownload() {
   const [manualKey, setManualKey] = useState('');
   const [showKey, setShowKey] = useState(false);
 
-  // Parse key, iv, hash from URL fragment
+  // Parse key, iv, hash from URL fragment with regex fallback for robustness
   const getFragmentParams = (customHash = null) => {
-    // Use either a provided hash string or look at the current location
-    const hashStr = customHash || location.hash || window.location.hash;
+    const hashStr = customHash || window.location.hash || location.hash;
+    if (!hashStr) return { key: '', iv: '', sha256Hash: null };
+
     const cleanHash = hashStr.startsWith('#') ? hashStr.substring(1) : hashStr;
     const params = new URLSearchParams(cleanHash);
     
-    return {
-      key: params.get('key') || '',
-      iv: params.get('iv') || '',
-      sha256Hash: params.get('hash') || null
-    };
+    let key = params.get('key') || '';
+    let iv = params.get('iv') || '';
+    let sha256Hash = params.get('hash') || null;
+
+    // Fallback: Primitive regex parsing if URLSearchParams fails (some browsers/encodings)
+    if (!key && cleanHash.includes('key=')) {
+      const keyMatch = cleanHash.match(/[#&]key=([^&]*)/);
+      if (keyMatch) key = decodeURIComponent(keyMatch[1]);
+    }
+    if (!iv && cleanHash.includes('iv=')) {
+      const ivMatch = cleanHash.match(/[#&]iv=([^&]*)/);
+      if (ivMatch) iv = decodeURIComponent(ivMatch[1]);
+    }
+    
+    return { key, iv, sha256Hash };
   };
 
+  // Effect 1: Fetch File Info
   useEffect(() => {
     fetchFileInfo();
-    
-    // Listen for hash changes in case user pastes fragment manually
-    const handleHashChange = () => {
+  }, [fileId]);
+
+  // Effect 2: Key Detection & Hash listener
+  useEffect(() => {
+    const detectKey = () => {
       const { key } = getFragmentParams();
-      if (key && status === 'needsKey') {
+      if (key) {
         setStatus('ready');
+      } else if (fileInfo && status !== 'done' && status !== 'decrypting' && status !== 'error') {
+        setStatus('needsKey');
       }
     };
+
+    // Run detection if we have file info but status is still generic
+    if (fileInfo && (status === 'loading' || status === 'needsKey' || status === 'ready')) {
+      detectKey();
+    }
     
+    const handleHashChange = () => detectKey();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [fileId, status]);
+  }, [fileInfo, fileId]);
 
   const fetchFileInfo = async () => {
     try {
@@ -53,14 +75,6 @@ export default function FileDownload() {
       }
       const data = await res.json();
       setFileInfo(data);
-
-      // Check if key is present in the URL
-      const { key } = getFragmentParams();
-      if (!key) {
-        setStatus('needsKey');
-      } else {
-        setStatus('ready');
-      }
     } catch (err) {
       setError(err.message);
       setStatus('error');
