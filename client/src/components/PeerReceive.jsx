@@ -38,10 +38,20 @@ export default function PeerReceive() {
       pcRef.current = pc;
 
       // Receive file metadata
+      socket.off('file-meta');
       socket.on('file-meta', ({ meta }) => {
         setFileMeta(meta);
         metaRef.current = meta;
       });
+
+      // Handle connection state
+      pc.onconnectionstatechange = () => {
+        console.log('Receiver ICE State:', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+          setError('WebRTC connection failed. This may be due to a restrictive network.');
+          setStatus('error');
+        }
+      };
 
       // Handle data channel
       pc.ondatachannel = async (event) => {
@@ -97,9 +107,10 @@ export default function PeerReceive() {
         }
       };
 
+      socket.off('peer-disconnected');
       socket.on('peer-disconnected', () => {
         if (status !== 'done') {
-          setError('Sender disconnected');
+          setError('Sender disconnected. Connection lost.');
           setStatus('error');
         }
       });

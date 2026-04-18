@@ -48,6 +48,7 @@ export default function PeerSend({ encryption }) {
       const socket = getSocket();
 
       // Wait for peer to join
+      socket.off('peer-joined'); // Clean up old listeners
       socket.on('peer-joined', async () => {
         try {
           setStatus('connected');
@@ -90,7 +91,17 @@ export default function PeerSend({ encryption }) {
 
               setStatus('done');
             } catch (err) {
+              console.error('P2P Error:', err);
               setError(err.message);
+              setStatus('error');
+            }
+          };
+
+          // Handle state changes
+          pc.onconnectionstatechange = () => {
+            console.log('ICE Connection State:', pc.connectionState);
+            if (pc.connectionState === 'failed') {
+              setError('Connection failed. This usually happens due to restrictive firewalls.');
               setStatus('error');
             }
           };
@@ -98,14 +109,16 @@ export default function PeerSend({ encryption }) {
           // Create offer
           await startOffer(pc, room);
         } catch (err) {
+          console.error('P2P Setup Error:', err);
           setError(err.message);
           setStatus('error');
         }
       });
 
+      socket.off('peer-disconnected');
       socket.on('peer-disconnected', () => {
         if (status !== 'done') {
-          setError('Peer disconnected');
+          setError('Peer disconnected before transfer finished.');
           setStatus('error');
         }
       });

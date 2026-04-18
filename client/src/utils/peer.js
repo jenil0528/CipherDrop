@@ -9,7 +9,14 @@ let socket = null;
 export function getSocket() {
   if (!socket) {
     socket = io(SERVER_URL, {
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      timeout: 10000
+    });
+    
+    socket.on('connect_error', (err) => {
+      console.error('Socket.io connection error:', err);
     });
   }
   return socket;
@@ -56,7 +63,10 @@ export function createSenderPeer(roomId) {
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
     ]
   });
 
@@ -71,6 +81,10 @@ export function createSenderPeer(roomId) {
     }
   };
 
+  // Clean up any old listeners before adding new ones
+  s.off('signal-ice-candidate');
+  s.off('signal-answer');
+
   // Listen for ICE candidates from receiver
   s.on('signal-ice-candidate', ({ candidate }) => {
     if (candidate) {
@@ -80,7 +94,13 @@ export function createSenderPeer(roomId) {
 
   // Listen for answer
   s.on('signal-answer', async ({ answer }) => {
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    try {
+      if (pc.signalingState !== 'stable') {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    } catch (err) {
+      console.error('Error setting remote description:', err);
+    }
   });
 
   return { pc, dataChannel };
@@ -94,7 +114,10 @@ export function createReceiverPeer(roomId) {
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
     ]
   });
 
@@ -105,6 +128,10 @@ export function createReceiverPeer(roomId) {
     }
   };
 
+  // Clean up any old listeners before adding new ones
+  s.off('signal-ice-candidate');
+  s.off('signal-offer');
+
   // Listen for ICE candidates from sender
   s.on('signal-ice-candidate', ({ candidate }) => {
     if (candidate) {
@@ -114,10 +141,14 @@ export function createReceiverPeer(roomId) {
 
   // Listen for offer and send answer
   s.on('signal-offer', async ({ offer }) => {
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    s.emit('signal-answer', { roomId, answer });
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      s.emit('signal-answer', { roomId, answer });
+    } catch (err) {
+      console.error('Error handling offer:', err);
+    }
   });
 
   return { pc };
