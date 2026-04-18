@@ -37,6 +37,9 @@ export default function PeerReceive() {
       const { pc } = createReceiverPeer(targetRoomId);
       pcRef.current = pc;
 
+      // Notify sender that receiver is ready to establish WebRTC connection
+      socket.emit('signal-ready', { roomId: targetRoomId });
+
       // Receive file metadata
       socket.off('file-meta');
       socket.on('file-meta', ({ meta }) => {

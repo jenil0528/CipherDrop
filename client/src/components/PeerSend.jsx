@@ -14,6 +14,7 @@ export default function PeerSend({ encryption }) {
   const [copiedKey, setCopiedKey] = useState(false);
   const [keyMode, setKeyMode] = useState('in-url'); // 'in-url' or 'separate'
   const [sharedKey, setSharedKey] = useState('');
+  const [isUnlimited, setIsUnlimited] = useState(false);
   const fileInputRef = useRef(null);
   const pcRef = useRef(null);
   const dcRef = useRef(null);
@@ -47,9 +48,20 @@ export default function PeerSend({ encryption }) {
 
       const socket = getSocket();
 
-      // Wait for peer to join
-      socket.off('peer-joined'); // Clean up old listeners
-      socket.on('peer-joined', async () => {
+      // If unlimited mode is on, tell the server to skip the 1-hour cleanup
+      if (isUnlimited) {
+        socket.emit('set-unlimited-room', room);
+      }
+
+      // Wait for receiver to join AND be ready (handshake)
+      socket.off('peer-joined');
+      socket.off('signal-ready');
+
+      socket.on('peer-joined', () => {
+        console.log('Peer joined room, waiting for ready signal...');
+      });
+
+      socket.on('signal-ready', async () => {
         try {
           setStatus('connected');
 
@@ -261,6 +273,21 @@ export default function PeerSend({ encryption }) {
                 <Wifi size={18} />
                 Start P2P Session
               </button>
+
+              <div className="p2p-options-row">
+                <label className="p2p-toggle">
+                  <input 
+                    type="checkbox" 
+                    checked={isUnlimited} 
+                    onChange={(e) => setIsUnlimited(e.target.checked)} 
+                  />
+                  <span className="toggle-slider"></span>
+                  <div className="toggle-label">
+                    <span>Unlimited Session</span>
+                    <p>Room stays active until you close this tab</p>
+                  </div>
+                </label>
+              </div>
             </>
           )}
 

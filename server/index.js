@@ -6,7 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const { router: filesRouter } = require('./routes/files');
+const { router: filesRouter, deleteLocalFile } = require('./routes/files');
 
 const app = express();
 const server = http.createServer(app);
@@ -72,6 +72,7 @@ app.get('/health', (req, res) => {
 // WebRTC Signaling Logic
 // =====================
 const rooms = new Map();
+const socketToFiles = new Map(); // socket.id -> [fileId1, fileId2, ...]
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -82,11 +83,30 @@ io.on('connection', (socket) => {
     rooms.set(roomId, {
       sender: socket.id,
       receiver: null,
-      createdAt: new Date()
+      createdAt: new Date(),
+      unlimited: false // Default to standard cleanup
     });
     socket.join(roomId);
     console.log(`Room created: ${roomId} by ${socket.id}`);
     callback({ roomId });
+  });
+
+  // Set room to unlimited session (stays alive until sender leaves)
+  socket.on('set-unlimited-room', (roomId) => {
+    const room = rooms.get(roomId);
+    if (room && room.sender === socket.id) {
+      room.unlimited = true;
+      console.log(`Room ${roomId} set to UNLIMITED session`);
+    }
+  });
+
+  // Tracking for "Live Relay" files (delete on disconnect)
+  socket.on('track-live-file', (fileId) => {
+    if (!socketToFiles.has(socket.id)) {
+      socketToFiles.set(socket.id, []);
+    }
+    socketToFiles.get(socket.id).push(fileId);
+    console.log(`Tracking live file ${fileId} for socket ${socket.id}`);
   });
 
   // Join an existing room
@@ -112,6 +132,14 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (room && room.receiver) {
       io.to(room.receiver).emit('signal-offer', { offer });
+    }
+  });
+
+  // New handshake event: Receiver is ready for connection
+  socket.on('signal-ready', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (room && room.sender) {
+      io.to(room.sender).emit('signal-ready', { from: socket.id });
     }
   });
 
@@ -154,9 +182,19 @@ io.on('connection', (socket) => {
   });
 
   // Handle disconnect
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`Client disconnected: ${socket.id}`);
-    // Clean up rooms where this socket was involved
+    
+    // 1. Cleanup "Live Relay" files
+    if (socketToFiles.has(socket.id)) {
+      const fileIds = socketToFiles.get(socket.id);
+      for (const fileId of fileIds) {
+        await deleteLocalFile(fileId);
+      }
+      socketToFiles.delete(socket.id);
+    }
+
+    // 2. Clean up rooms where this socket was involved
     for (const [roomId, room] of rooms.entries()) {
       if (room.sender === socket.id || room.receiver === socket.id) {
         const otherId = room.sender === socket.id ? room.receiver : room.sender;
@@ -180,7 +218,7 @@ setInterval(() => {
   const now = new Date();
   for (const [roomId, room] of rooms.entries()) {
     const age = (now - room.createdAt) / 1000 / 60;
-    if (age > 60) { // 1 hour
+    if (age > 60 && !room.unlimited) { // 1 hour, skip if unlimited
       rooms.delete(roomId);
       console.log(`Cleaned up old room: ${roomId}`);
     }

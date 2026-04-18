@@ -2383,6 +2383,89 @@ input:focus, textarea:focus {
   box-shadow: 0 0 0 2px var(--border-active), var(--shadow-glow-indigo);
   transform: translateY(-1px);
 }
+
+/* ════════════════════════════════════════
+   P2P & LIVE RELAY UI ENHANCEMENTS
+   ════════════════════════════════════════ */
+.p2p-options-row {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.p2p-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.p2p-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-active);
+}
+
+.p2p-toggle input {
+  display: none;
+}
+
+.toggle-slider {
+  width: 36px;
+  height: 20px;
+  background: #1e293b;
+  border-radius: 10px;
+  position: relative;
+  border: 1px solid var(--border-color);
+  transition: all 0.3s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #4e4e68;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.p2p-toggle input:checked + .toggle-slider {
+  background: var(--accent-indigo);
+  border-color: var(--accent-indigo);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+}
+
+.p2p-toggle input:checked + .toggle-slider::before {
+  left: 18px;
+  background: white;
+}
+
+.toggle-label span {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggle-label p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.expiry-chip-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
 input, textarea {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }

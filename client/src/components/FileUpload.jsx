@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Upload, Lock, CheckCircle, Copy, AlertCircle, Loader, Clock, Shield, Link2, KeyRound } from 'lucide-react';
 import { encryptFile, formatFileSize } from '../utils/crypto';
-import { API_URL } from '../utils/peer';
+import { API_URL, getSocket } from '../utils/peer';
 
 const EXPIRY_OPTIONS = [
   { value: 15, label: '15 min', short: '15m' },
@@ -10,6 +10,7 @@ const EXPIRY_OPTIONS = [
   { value: 360, label: '6 hours', short: '6h' },
   { value: 720, label: '12 hours', short: '12h' },
   { value: 1440, label: '24 hours', short: '24h' },
+  { value: 0, label: 'Unlimited (Until Closed)', short: '∞' },
 ];
 
 export default function FileUpload({ encryption }) {
@@ -86,6 +87,13 @@ export default function FileUpload({ encryption }) {
 
       const data = await res.json();
       setProgress(100);
+
+      // If "Unlimited (Until Closed)" is selected, tell the server to track this file 
+      // and delete it when this socket disconnects.
+      if (expiryMinutes === 0) {
+        const socket = getSocket();
+        socket.emit('track-live-file', data.fileId);
+      }
 
       const baseUrl = window.location.origin;
 

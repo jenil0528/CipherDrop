@@ -163,4 +163,27 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000);
 
-module.exports = { router };
+// Manual deletion for session-based (Live Relay) files
+async function deleteLocalFile(fileId) {
+  try {
+    // 1. Delete from Redis
+    await redisClient.del(`file:${fileId}`);
+    
+    // 2. Delete from Disk
+    const uploadDir = path.join(__dirname, '..', 'uploads');
+    const filePath = path.join(uploadDir, fileId);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Socket Disconnect -> Manually deleted file: ${fileId}`);
+    }
+    return true;
+  } catch (err) {
+    console.error(`Error manually deleting file ${fileId}:`, err);
+    return false;
+  }
+}
+
+module.exports = { 
+  router,
+  deleteLocalFile
+};
