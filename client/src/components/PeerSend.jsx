@@ -111,9 +111,11 @@ export default function PeerSend({ encryption }) {
 
           // Handle state changes
           pc.onconnectionstatechange = () => {
-            console.log('ICE Connection State:', pc.connectionState);
-            if (pc.connectionState === 'failed') {
-              setError('Connection failed. This usually happens due to restrictive firewalls.');
+            const state = pc.connectionState;
+            console.log(`[P2P] Sender ICE State: ${state}`);
+            if (state === 'failed' || state === 'disconnected') {
+              console.warn('[P2P] Connection failed or disconnected. Showing retry option.');
+              setError('Connection failed. This usually happens due to restrictive firewalls or network timeouts.');
               setStatus('error');
             }
           };
@@ -385,7 +387,13 @@ export default function PeerSend({ encryption }) {
             <div className="error-section">
               <AlertCircle size={24} />
               <p>{error}</p>
-              <button className="btn-secondary" onClick={reset}>Try Again</button>
+              <div className="error-actions">
+                <button className="btn-primary" onClick={startSharing}>
+                  <Wifi size={18} />
+                  Retry Connection
+                </button>
+                <button className="btn-secondary" onClick={reset}>Cancel</button>
+              </div>
             </div>
           )}
         </div>

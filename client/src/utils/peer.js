@@ -65,15 +65,27 @@ export function createSenderPeer(roomId) {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:stun.freeswitch.org:3478' },
       {
         urls: 'turn:openrelay.metered.ca:443',
         username: 'openrelayproject',
         credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
       }
-    ]
+    ],
+    iceCandidatePoolSize: 10
   });
+
+  const pendingCandidates = [];
+
 
   const dataChannel = pc.createDataChannel('fileTransfer', {
     ordered: true
@@ -91,17 +103,30 @@ export function createSenderPeer(roomId) {
   s.off('signal-answer');
 
   // Listen for ICE candidates from receiver
-  s.on('signal-ice-candidate', ({ candidate }) => {
-    if (candidate) {
-      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.error);
+  s.on('signal-ice-candidate', async ({ candidate }) => {
+    if (!candidate) return;
+    try {
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        pendingCandidates.push(candidate);
+      }
+    } catch (err) {
+      console.error('Error adding ICE candidate:', err);
     }
   });
 
   // Listen for answer
   s.on('signal-answer', async ({ answer }) => {
     try {
-      if (pc.signalingState !== 'stable') {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log('Sender: Received answer, setting remote description...');
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      
+      // Process buffered candidates
+      console.log(`Processing ${pendingCandidates.length} buffered candidates...`);
+      while (pendingCandidates.length > 0) {
+        const cand = pendingCandidates.shift();
+        await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.error('Delayed candidate error:', e));
       }
     } catch (err) {
       console.error('Error setting remote description:', err);
@@ -121,15 +146,27 @@ export function createReceiverPeer(roomId) {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:stun.freeswitch.org:3478' },
       {
         urls: 'turn:openrelay.metered.ca:443',
         username: 'openrelayproject',
         credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
       }
-    ]
+    ],
+    iceCandidatePoolSize: 10
   });
+
+  const pendingCandidates = [];
+
 
   // Handle ICE candidates
   pc.onicecandidate = (event) => {
@@ -143,19 +180,34 @@ export function createReceiverPeer(roomId) {
   s.off('signal-offer');
 
   // Listen for ICE candidates from sender
-  s.on('signal-ice-candidate', ({ candidate }) => {
-    if (candidate) {
-      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.error);
+  s.on('signal-ice-candidate', async ({ candidate }) => {
+    if (!candidate) return;
+    try {
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        pendingCandidates.push(candidate);
+      }
+    } catch (err) {
+      console.error('Error adding ICE candidate:', err);
     }
   });
 
   // Listen for offer and send answer
   s.on('signal-offer', async ({ offer }) => {
     try {
+      console.log('Receiver: Received offer, setting remote description...');
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       s.emit('signal-answer', { roomId, answer });
+
+      // Process buffered candidates
+      console.log(`Processing ${pendingCandidates.length} buffered candidates...`);
+      while (pendingCandidates.length > 0) {
+        const cand = pendingCandidates.shift();
+        await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.error('Delayed candidate error:', e));
+      }
     } catch (err) {
       console.error('Error handling offer:', err);
     }
