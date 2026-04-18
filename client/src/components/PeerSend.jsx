@@ -18,6 +18,18 @@ export default function PeerSend({ encryption }) {
   const fileInputRef = useRef(null);
   const pcRef = useRef(null);
   const dcRef = useRef(null);
+  const watchdogRef = useRef(null);
+
+  const triggerIceRestart = async () => {
+    if (!pcRef.current || !roomId) return;
+    console.warn('[P2P] Watchdog: Initial connection hanging. Triggering ICE Restart...');
+    try {
+      const pc = pcRef.current;
+      await startOffer(pc, roomId, { iceRestart: true });
+    } catch (err) {
+      console.error('[P2P] ICE Restart failed:', err);
+    }
+  };
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();
@@ -113,12 +125,34 @@ export default function PeerSend({ encryption }) {
           pc.onconnectionstatechange = () => {
             const state = pc.connectionState;
             console.log(`[P2P] Sender ICE State: ${state}`);
+            
+            if (state === 'connected') {
+              if (watchdogRef.current) {
+                clearTimeout(watchdogRef.current);
+                watchdogRef.current = null;
+              }
+            }
+            
             if (state === 'failed' || state === 'disconnected') {
-              console.warn('[P2P] Connection failed or disconnected. Showing retry option.');
-              setError('Connection failed. This usually happens due to restrictive firewalls or network timeouts.');
-              setStatus('error');
+              console.warn('[P2P] Connection failed or disconnected. Attempting ICE Restart...');
+              triggerIceRestart();
+              
+              // Second fallback if even restart fails after another 10s
+              setTimeout(() => {
+                if (pc.connectionState !== 'connected' && status !== 'done') {
+                  setError('Direct P2P connection physically blocked by your network/firewall. Please try a different connection or use a VPN.');
+                  setStatus('error');
+                }
+              }, 10000);
             }
           };
+
+          // Start watchdog: if not connected in 10s, try restart
+          watchdogRef.current = setTimeout(() => {
+            if (pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
+              triggerIceRestart();
+            }
+          }, 10000);
 
           // Create offer
           await startOffer(pc, room);

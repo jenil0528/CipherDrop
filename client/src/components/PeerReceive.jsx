@@ -51,10 +51,22 @@ export default function PeerReceive() {
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         console.log(`[P2P] Receiver ICE State: ${state}`);
-        if (state === 'failed' || state === 'disconnected') {
-          console.warn('[P2P] Receiver Connection failed. Showing retry option.');
-          setError('WebRTC connection failed. This may be due to a restrictive network or a signaling timeout.');
-          setStatus('error');
+        
+        if (state === 'connected') {
+          setStatus('receiving');
+          setError('');
+        }
+        
+        if (state === 'failed') {
+          console.warn('[P2P] Receiver connection failed. Waiting for potential ICE restart from sender...');
+          // Don't immediately error out, let the sender try to restart
+          // But if it stays failed for too long, then error
+          setTimeout(() => {
+            if (pcRef.current?.connectionState === 'failed') {
+              setStatus('error');
+              setError('Connection failed. Sender may be unreachable or behind a strict firewall.');
+            }
+          }, 15000);
         }
       };
 

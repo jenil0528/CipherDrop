@@ -69,9 +69,13 @@ export function createSenderPeer(roomId) {
       { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:stun.freeswitch.org:3478' },
       {
         urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
         username: 'openrelayproject',
         credential: 'openrelayproject'
       },
@@ -79,9 +83,17 @@ export function createSenderPeer(roomId) {
         urls: 'turn:openrelay.metered.ca:80',
         username: 'openrelayproject',
         credential: 'openrelayproject'
+      },
+      {
+        urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
       }
     ],
-    iceCandidatePoolSize: 10
+    iceCandidatePoolSize: 10,
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
+    iceTransportPolicy: 'all'
   });
 
   const pendingCandidates = [];
@@ -150,9 +162,13 @@ export function createReceiverPeer(roomId) {
       { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:stun.freeswitch.org:3478' },
       {
         urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
         username: 'openrelayproject',
         credential: 'openrelayproject'
       },
@@ -160,9 +176,17 @@ export function createReceiverPeer(roomId) {
         urls: 'turn:openrelay.metered.ca:80',
         username: 'openrelayproject',
         credential: 'openrelayproject'
+      },
+      {
+        urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
       }
     ],
-    iceCandidatePoolSize: 10
+    iceCandidatePoolSize: 10,
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
+    iceTransportPolicy: 'all'
   });
 
   const pendingCandidates = [];
