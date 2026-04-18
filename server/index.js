@@ -82,7 +82,7 @@ io.on('connection', (socket) => {
     const roomId = generateRoomId();
     rooms.set(roomId, {
       sender: socket.id,
-      receiver: null,
+      receivers: new Set(),
       createdAt: new Date(),
       unlimited: false // Default to standard cleanup
     });
@@ -115,10 +115,7 @@ io.on('connection', (socket) => {
     if (!room) {
       return callback({ error: 'Room not found' });
     }
-    if (room.receiver) {
-      return callback({ error: 'Room is full' });
-    }
-    room.receiver = socket.id;
+    room.receivers.add(socket.id);
     socket.join(roomId);
     console.log(`${socket.id} joined room: ${roomId}`);
     
@@ -127,11 +124,10 @@ io.on('connection', (socket) => {
     callback({ success: true });
   });
 
-  // WebRTC signaling: relay offer
-  socket.on('signal-offer', ({ roomId, offer }) => {
-    const room = rooms.get(roomId);
-    if (room && room.receiver) {
-      io.to(room.receiver).emit('signal-offer', { offer });
+  // WebRTC signaling: relay offer (from sender to specific receiver)
+  socket.on('signal-offer', ({ roomId, offer, target }) => {
+    if (target) {
+      io.to(target).emit('signal-offer', { offer });
     }
   });
 
@@ -143,42 +139,34 @@ io.on('connection', (socket) => {
     }
   });
 
-  // WebRTC signaling: relay answer
+  // WebRTC signaling: relay answer (from receiver to sender)
   socket.on('signal-answer', ({ roomId, answer }) => {
     const room = rooms.get(roomId);
     if (room && room.sender) {
-      io.to(room.sender).emit('signal-answer', { answer });
+      // Inject 'from' so sender knows which connection this is for
+      io.to(room.sender).emit('signal-answer', { from: socket.id, answer });
     }
   });
 
   // WebRTC signaling: relay ICE candidate
-  socket.on('signal-ice-candidate', ({ roomId, candidate }) => {
+  socket.on('signal-ice-candidate', ({ roomId, candidate, target }) => {
     const room = rooms.get(roomId);
     if (!room) return;
-    const targetId = socket.id === room.sender ? room.receiver : room.sender;
-    if (targetId) {
-      io.to(targetId).emit('signal-ice-candidate', { candidate });
+    if (socket.id === room.sender) {
+      if (target) io.to(target).emit('signal-ice-candidate', { candidate });
+    } else {
+      io.to(room.sender).emit('signal-ice-candidate', { from: socket.id, candidate });
     }
   });
 
-  // File metadata exchange for P2P
-  socket.on('file-meta', ({ roomId, meta }) => {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    const targetId = socket.id === room.sender ? room.receiver : room.sender;
-    if (targetId) {
-      io.to(targetId).emit('file-meta', { meta });
-    }
+  // File metadata exchange for P2P (from sender to receiver)
+  socket.on('file-meta', ({ roomId, meta, target }) => {
+    if (target) io.to(target).emit('file-meta', { meta });
   });
 
-  // Transfer complete notification
-  socket.on('transfer-complete', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    const targetId = socket.id === room.sender ? room.receiver : room.sender;
-    if (targetId) {
-      io.to(targetId).emit('transfer-complete');
-    }
+  // Transfer complete notification (from sender to receiver)
+  socket.on('transfer-complete', ({ roomId, target }) => {
+    if (target) io.to(target).emit('transfer-complete');
   });
 
   // Handle disconnect
@@ -196,24 +184,21 @@ io.on('connection', (socket) => {
 
     // 2. Clean up rooms where this socket was involved
     for (const [roomId, room] of rooms.entries()) {
-      if (room.sender === socket.id || room.receiver === socket.id) {
-        const isSender = room.sender === socket.id;
-        const otherId = isSender ? room.receiver : room.sender;
-        
-        if (otherId) {
-          io.to(otherId).emit('peer-disconnected');
+      if (room.sender === socket.id) {
+        // Sender left, notify all receivers and delete room
+        for (const receiverId of room.receivers) {
+          io.to(receiverId).emit('peer-disconnected');
         }
-
-        // Logic for "Unlimited" sessions:
-        // - If SENDER leaves, always delete the room.
-        // - If RECEIVER leaves and room is unlimited, keep room open but clear receiver.
-        if (isSender) {
-          rooms.delete(roomId);
-          console.log(`Room ${roomId} deleted (Sender left)`);
-        } else if (room.unlimited) {
-          room.receiver = null;
-          console.log(`Room ${roomId} preserved (Receiver left, Unlimited session)`);
-        } else {
+        rooms.delete(roomId);
+        console.log(`Room ${roomId} deleted (Sender left)`);
+      } else if (room.receivers.has(socket.id)) {
+        // A receiver left
+        room.receivers.delete(socket.id);
+        io.to(room.sender).emit('peer-disconnected', { peerId: socket.id });
+        console.log(`Socket ${socket.id} (Receiver) left room ${roomId}`);
+        
+        // Delete if not unlimited session
+        if (!room.unlimited) {
           rooms.delete(roomId);
           console.log(`Room ${roomId} deleted (Receiver left, Standard session)`);
         }

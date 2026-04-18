@@ -2,19 +2,20 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, Wifi, CheckCircle, AlertCircle, Loader, ShieldCheck, Hash, Lock, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { decryptFile, formatFileSize } from '../utils/crypto';
-import { joinRoom, getSocket, createReceiverPeer, receiveFileData } from '../utils/peer';
-import { saveAs } from 'file-saver';
+import { joinRoom, getSocket, receiveFileData, ICE_SERVERS_CONFIG } from '../utils/peer';
 
 export default function PeerReceive() {
   const { roomId: urlRoomId } = useParams();
   const [roomId, setRoomId] = useState(urlRoomId || '');
-  const [status, setStatus] = useState(urlRoomId ? 'joining' : 'idle'); // idle, joining, waiting, receiving, needsKey, decrypting, done, error
+  const [status, setStatus] = useState(urlRoomId ? 'joining' : 'idle'); 
   const [fileMeta, setFileMeta] = useState(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [manualKey, setManualKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [encryptedBuffer, setEncryptedBuffer] = useState(null);
+  const [downloadUrl, setDownloadUrl] = useState('');
+  
   const pcRef = useRef(null);
   const metaRef = useRef(null);
 
@@ -22,6 +23,9 @@ export default function PeerReceive() {
     if (urlRoomId) {
       handleJoin(urlRoomId);
     }
+    return () => {
+       reset();
+    };
   }, [urlRoomId]);
 
   const handleJoin = async (id) => {
@@ -34,14 +38,53 @@ export default function PeerReceive() {
       setStatus('waiting');
 
       const socket = getSocket();
-      const { pc } = createReceiverPeer(targetRoomId);
+      
+      const pc = new RTCPeerConnection(ICE_SERVERS_CONFIG);
       pcRef.current = pc;
+      const pendingCandidates = [];
 
-      // Notify sender that receiver is ready to establish WebRTC connection
-      socket.emit('signal-ready', { roomId: targetRoomId });
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal-ice-candidate', { roomId: targetRoomId, candidate: event.candidate });
+        }
+      };
+
+      socket.off('signal-ice-candidate');
+      socket.off('signal-offer');
+      socket.off('file-meta');
+      socket.off('peer-disconnected');
+
+      socket.on('signal-ice-candidate', async ({ candidate }) => {
+        if (!candidate) return;
+        try {
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            pendingCandidates.push(candidate);
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      });
+
+      socket.on('signal-offer', async ({ offer }) => {
+        try {
+          console.log('Receiver: Received offer, setting remote description...');
+          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('signal-answer', { roomId: targetRoomId, answer });
+
+          while (pendingCandidates.length > 0) {
+            const cand = pendingCandidates.shift();
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.error(e));
+          }
+        } catch (err) {
+          console.error('Error handling offer:', err);
+        }
+      });
 
       // Receive file metadata
-      socket.off('file-meta');
       socket.on('file-meta', ({ meta }) => {
         setFileMeta(meta);
         metaRef.current = meta;
@@ -57,14 +100,12 @@ export default function PeerReceive() {
           setError('');
         }
         
-        if (state === 'failed') {
+        if (state === 'failed' || state === 'disconnected') {
           console.warn('[P2P] Receiver connection failed. Waiting for potential ICE restart from sender...');
-          // Don't immediately error out, let the sender try to restart
-          // But if it stays failed for too long, then error
           setTimeout(() => {
-            if (pcRef.current?.connectionState === 'failed') {
+            if (pcRef.current?.connectionState !== 'connected' && status !== 'done') {
               setStatus('error');
-              setError('Connection failed. Sender may be unreachable or behind a strict firewall.');
+              setError('Connection failed. Sender closed tab or network blocked P2P.');
             }
           }, 15000);
         }
@@ -78,7 +119,6 @@ export default function PeerReceive() {
           setStatus('receiving');
         };
 
-        // Wait for binary data
         dataChannel.binaryType = 'arraybuffer';
 
         const meta = metaRef.current;
@@ -97,7 +137,6 @@ export default function PeerReceive() {
 
         // Check if key was included in metadata
         if (!currentMeta.keyBase64 || currentMeta.keyIncluded === false) {
-          // Key not included — need manual entry
           setEncryptedBuffer(encryptedData);
           setStatus('needsKey');
           return;
@@ -113,10 +152,10 @@ export default function PeerReceive() {
             currentMeta.sha256Hash
           );
 
-          // Save file
+          // Save file blob to memory URL
           const blob = new Blob([decryptedData], { type: currentMeta.mimeType || 'application/octet-stream' });
-          saveAs(blob, currentMeta.originalName || 'received_file');
-          
+          const url = URL.createObjectURL(blob);
+          setDownloadUrl(url);
           setStatus('done');
         } catch (err) {
           setError(err.message);
@@ -124,13 +163,15 @@ export default function PeerReceive() {
         }
       };
 
-      socket.off('peer-disconnected');
       socket.on('peer-disconnected', () => {
         if (status !== 'done') {
           setError('Sender disconnected. Connection lost.');
           setStatus('error');
         }
       });
+
+      // Notify sender that receiver is ready to establish WebRTC connection
+      socket.emit('signal-ready', { roomId: targetRoomId });
 
     } catch (err) {
       setError(err.message);
@@ -158,7 +199,8 @@ export default function PeerReceive() {
       );
 
       const blob = new Blob([decryptedData], { type: currentMeta.mimeType || 'application/octet-stream' });
-      saveAs(blob, currentMeta.originalName || 'received_file');
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
       
       setStatus('done');
     } catch (err) {
@@ -172,6 +214,9 @@ export default function PeerReceive() {
       pcRef.current.close();
       pcRef.current = null;
     }
+    if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+    }
     setStatus('idle');
     setRoomId('');
     setFileMeta(null);
@@ -179,6 +224,8 @@ export default function PeerReceive() {
     setError('');
     setManualKey('');
     setEncryptedBuffer(null);
+    setDownloadUrl('');
+    metaRef.current = null;
   };
 
   return (
@@ -333,7 +380,7 @@ export default function PeerReceive() {
                   disabled={!manualKey.trim()}
                 >
                   <KeyRound size={18} />
-                  Decrypt & Save File
+                  Decrypt & Download
                 </button>
               </div>
             </div>
@@ -352,15 +399,31 @@ export default function PeerReceive() {
             <div className="success-icon">
               <ShieldCheck size={48} />
             </div>
-            <h3>File Received & Decrypted!</h3>
-            <p>Your file has been securely transferred peer-to-peer.</p>
+            <h3 style={{marginBottom: '5px'}}>Ready to Download</h3>
+            
+            {fileMeta && (
+              <div style={{background: 'rgba(0,0,0,0.2)', padding:'10px 20px', borderRadius:'8px', marginBottom:'20px'}}>
+                  <p style={{margin:0, fontWeight:600}}>{fileMeta.originalName}</p>
+                  <p style={{margin:0, fontSize:'0.8rem', opacity:0.7}}>{formatFileSize(fileMeta.originalSize)}</p>
+              </div>
+            )}
+            
             {fileMeta?.encryptionType === 'SHA' && (
-              <div className="integrity-badge">
+              <div className="integrity-badge" style={{marginBottom: '20px'}}>
                 <CheckCircle size={16} />
                 SHA-256 integrity verified ✓
               </div>
             )}
-            <button className="btn-secondary" onClick={reset}>
+            
+            {downloadUrl && (
+                <a href={downloadUrl} download={fileMeta?.originalName || 'received_file'} style={{textDecoration:'none', width:'100%'}}>
+                    <button className="btn-primary" style={{width: '100%', marginBottom: '10px', fontSize: '1.05rem', padding: '14px'}}>
+                       <Download size={20} /> Download File
+                    </button>
+                </a>
+            )}
+            
+            <button className="btn-secondary" onClick={reset} style={{width: '100%'}}>
               Receive Another File
             </button>
           </div>
@@ -372,7 +435,7 @@ export default function PeerReceive() {
             <h3>Error</h3>
             <p>{error}</p>
             <button className="btn-secondary" onClick={reset}>
-              Try Again
+               Try Again
             </button>
           </div>
         )}

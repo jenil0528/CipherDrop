@@ -1,35 +1,53 @@
-import { useState, useRef, useCallback } from 'react';
-import { Upload, Wifi, Copy, CheckCircle, AlertCircle, Loader, Users, Link2, KeyRound } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Wifi, Copy, CheckCircle, AlertCircle, Loader, Users, Link2, KeyRound } from 'lucide-react';
 import { encryptFile, formatFileSize } from '../utils/crypto';
-import { createRoom, getSocket, createSenderPeer, startOffer, sendFileData } from '../utils/peer';
+import { createRoom, getSocket, startOffer, sendFileData, ICE_SERVERS_CONFIG } from '../utils/peer';
 
 export default function PeerSend({ encryption }) {
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle, creating, waiting, connected, encrypting, sending, done, error
+  const [status, setStatus] = useState('idle'); // idle, creating, encrypting, ready, error
   const [roomId, setRoomId] = useState('');
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [keyMode, setKeyMode] = useState('in-url'); // 'in-url' or 'separate'
+  const [keyMode, setKeyMode] = useState('in-url'); 
   const [sharedKey, setSharedKey] = useState('');
-  const [isUnlimited, setIsUnlimited] = useState(false);
-  const fileInputRef = useRef(null);
-  const pcRef = useRef(null);
-  const dcRef = useRef(null);
-  const watchdogRef = useRef(null);
+  const [isUnlimited, setIsUnlimited] = useState(true); // Default to true to encourage multi-user connectivity
+  
+  // Track state of multiple active connected peers
+  const [activePeers, setActivePeers] = useState({});
 
-  const triggerIceRestart = async () => {
-    if (!pcRef.current || !roomId) return;
-    console.warn('[P2P] Watchdog: Initial connection hanging. Triggering ICE Restart...');
+  const fileInputRef = useRef(null);
+  
+  // Ref map tracking active connections internally: { [peerId]: { pc, dc, pendingCandidates } }
+  const peersRef = useRef(new Map());
+  const encryptedBlobRef = useRef(null);
+  const encResultRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      reset();
+    };
+  }, []);
+
+  const triggerIceRestart = async (peerId) => {
+    const peer = peersRef.current.get(peerId);
+    if (!peer || !roomId) return;
+    console.warn(`[P2P] Watchdog: Connection hanging for ${peerId}. Triggering ICE Restart...`);
     try {
-      const pc = pcRef.current;
-      await startOffer(pc, roomId, { iceRestart: true });
+      await startOffer(peer.pc, roomId, peerId, { iceRestart: true });
     } catch (err) {
       console.error('[P2P] ICE Restart failed:', err);
     }
   };
+
+  const updatePeerState = useCallback((peerId, updates) => {
+      setActivePeers(prev => ({
+          ...prev,
+          [peerId]: { ...prev[peerId], ...updates }
+      }));
+  }, []);
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();
@@ -53,128 +71,156 @@ export default function PeerSend({ encryption }) {
     if (!file) return;
 
     try {
+      setStatus('encrypting');
+      
+      const encResult = await encryptFile(file, encryption);
+      encResultRef.current = encResult;
+      encryptedBlobRef.current = await encResult.encryptedBlob.arrayBuffer();
+      setSharedKey(encResult.keyBase64);
+
       setStatus('creating');
       const room = await createRoom();
       setRoomId(room);
-      setStatus('waiting');
+      setStatus('ready');
 
       const socket = getSocket();
 
-      // If unlimited mode is on, tell the server to skip the 1-hour cleanup
       if (isUnlimited) {
         socket.emit('set-unlimited-room', room);
       }
 
-      // Wait for receiver to join AND be ready (handshake)
       socket.off('peer-joined');
       socket.off('signal-ready');
+      socket.off('signal-answer');
+      socket.off('signal-ice-candidate');
+      socket.off('peer-disconnected');
 
-      socket.on('peer-joined', () => {
-        console.log('Peer joined room, waiting for ready signal...');
+      socket.on('peer-joined', ({ peerId }) => {
+        console.log(`Peer joined room: ${peerId}, waiting for ready signal...`);
       });
 
-      socket.on('signal-ready', async () => {
+      socket.on('signal-ready', async ({ from }) => {
+        console.log(`Peer requested connection: ${from}`);
+        setupPeerConnection(from, room, socket);
+      });
+
+      socket.on('signal-answer', async ({ from, answer }) => {
+        const peer = peersRef.current.get(from);
+        if (!peer) return;
         try {
-          setStatus('connected');
-
-          // Create WebRTC connection
-          const { pc, dataChannel } = createSenderPeer(room);
-          pcRef.current = pc;
-          dcRef.current = dataChannel;
-
-          dataChannel.onopen = async () => {
-            try {
-              // Encrypt
-              setStatus('encrypting');
-              const encResult = await encryptFile(file, encryption);
-
-              // Save key for separate sharing if needed
-              setSharedKey(encResult.keyBase64);
-
-              // Send metadata through signaling
-              // Include key in metadata only if key mode is 'in-url'
-              socket.emit('file-meta', {
-                roomId: room,
-                meta: {
-                  originalName: file.name,
-                  mimeType: file.type,
-                  originalSize: file.size,
-                  encryptedSize: encResult.encryptedBlob.size,
-                  encryptionType: encryption,
-                  keyBase64: keyMode === 'in-url' ? encResult.keyBase64 : null,
-                  iv: encResult.iv,
-                  sha256Hash: encResult.sha256Hash,
-                  keyIncluded: keyMode === 'in-url'
-                }
-              });
-
-              // Send encrypted data
-              setStatus('sending');
-              const encData = await encResult.encryptedBlob.arrayBuffer();
-              await sendFileData(dataChannel, encData, (p) => setProgress(Math.round(p * 100)));
-
-              setStatus('done');
-            } catch (err) {
-              console.error('P2P Error:', err);
-              setError(err.message);
-              setStatus('error');
-            }
-          };
-
-          // Handle state changes
-          pc.onconnectionstatechange = () => {
-            const state = pc.connectionState;
-            console.log(`[P2P] Sender ICE State: ${state}`);
-            
-            if (state === 'connected') {
-              if (watchdogRef.current) {
-                clearTimeout(watchdogRef.current);
-                watchdogRef.current = null;
-              }
-            }
-            
-            if (state === 'failed' || state === 'disconnected') {
-              console.warn('[P2P] Connection failed or disconnected. Attempting ICE Restart...');
-              triggerIceRestart();
-              
-              // Second fallback if even restart fails after another 10s
-              setTimeout(() => {
-                if (pc.connectionState !== 'connected' && status !== 'done') {
-                  setError('Direct P2P connection physically blocked by your network/firewall. Please try a different connection or use a VPN.');
-                  setStatus('error');
-                }
-              }, 10000);
-            }
-          };
-
-          // Start watchdog: if not connected in 10s, try restart
-          watchdogRef.current = setTimeout(() => {
-            if (pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
-              triggerIceRestart();
-            }
-          }, 10000);
-
-          // Create offer
-          await startOffer(pc, room);
+          await peer.pc.setRemoteDescription(new RTCSessionDescription(answer));
+          while (peer.pendingCandidates.length > 0) {
+            const cand = peer.pendingCandidates.shift();
+            await peer.pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.error(e));
+          }
         } catch (err) {
-          console.error('P2P Setup Error:', err);
-          setError(err.message);
-          setStatus('error');
+          console.error('Error setting remote description:', err);
         }
       });
 
-      socket.off('peer-disconnected');
-      socket.on('peer-disconnected', () => {
-        if (status !== 'done') {
-          setError('Peer disconnected before transfer finished.');
-          setStatus('error');
+      socket.on('signal-ice-candidate', async ({ from, candidate }) => {
+        if (!candidate) return;
+        const peer = peersRef.current.get(from);
+        if (!peer) return;
+        try {
+          if (peer.pc.remoteDescription) {
+            await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            peer.pendingCandidates.push(candidate);
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      });
+
+      socket.on('peer-disconnected', ({ peerId }) => {
+        console.log(`Peer disconnected: ${peerId}`);
+        const peer = peersRef.current.get(peerId);
+        if (peer) {
+          peer.pc.close();
+          peersRef.current.delete(peerId);
+          setActivePeers(prev => {
+            const next = { ...prev };
+            if (next[peerId] && next[peerId].state !== 'done') {
+                next[peerId].state = 'error';
+                next[peerId].errorMsg = 'Peer disconnected prematurely';
+            }
+            return next;
+          });
         }
       });
 
     } catch (err) {
+      console.error('P2P Setup Error:', err);
       setError(err.message);
       setStatus('error');
     }
+  };
+
+  const setupPeerConnection = async (peerId, room, socket) => {
+      const pc = new RTCPeerConnection(ICE_SERVERS_CONFIG);
+      const dc = pc.createDataChannel('fileTransfer', { ordered: true });
+      
+      peersRef.current.set(peerId, { pc, dc, pendingCandidates: [] });
+      updatePeerState(peerId, { id: peerId, state: 'connecting', progress: 0 });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal-ice-candidate', { roomId: room, candidate: event.candidate, target: peerId });
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'failed' || state === 'disconnected') {
+             triggerIceRestart(peerId);
+             setTimeout(() => {
+                 if (pc.connectionState !== 'connected') {
+                     updatePeerState(peerId, { state: 'error', errorMsg: 'Connection blocked by network/firewall.' });
+                 }
+             }, 10000);
+        }
+      };
+
+      dc.onopen = async () => {
+          updatePeerState(peerId, { state: 'sending' });
+          const encResult = encResultRef.current;
+          
+          socket.emit('file-meta', {
+            roomId: room,
+            target: peerId,
+            meta: {
+              originalName: file.name,
+              mimeType: file.type,
+              originalSize: file.size,
+              encryptedSize: encResult.encryptedBlob.size,
+              encryptionType: encryption,
+              keyBase64: keyMode === 'in-url' ? encResult.keyBase64 : null,
+              iv: encResult.iv,
+              sha256Hash: encResult.sha256Hash,
+              keyIncluded: keyMode === 'in-url'
+            }
+          });
+
+          try {
+              await sendFileData(dc, encryptedBlobRef.current, (p) => {
+                  updatePeerState(peerId, { progress: Math.round(p * 100) });
+              });
+              updatePeerState(peerId, { state: 'done', progress: 100 });
+              socket.emit('transfer-complete', { roomId: room, target: peerId });
+          } catch(err) {
+              updatePeerState(peerId, { state: 'error', errorMsg: 'Transfer interrupted.' });
+          }
+      };
+
+      // Watchdog: If data channel doesn't open within 15s after handshake starts
+      setTimeout(() => {
+        if (pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
+          triggerIceRestart(peerId);
+        }
+      }, 15000);
+
+      await startOffer(pc, room, peerId);
   };
 
   const copyRoomId = () => {
@@ -191,16 +237,25 @@ export default function PeerSend({ encryption }) {
   };
 
   const reset = () => {
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
+    for (let [_, peer] of peersRef.current) {
+        peer.pc.close();
     }
+    peersRef.current.clear();
+    const socket = getSocket();
+    socket.off('peer-joined');
+    socket.off('signal-ready');
+    socket.off('signal-answer');
+    socket.off('signal-ice-candidate');
+    socket.off('peer-disconnected');
+    
     setFile(null);
     setStatus('idle');
     setRoomId('');
-    setProgress(0);
     setError('');
     setSharedKey('');
+    setActivePeers({});
+    encryptedBlobRef.current = null;
+    encResultRef.current = null;
   };
 
   const getFileIcon = (fileName) => {
@@ -219,7 +274,7 @@ export default function PeerSend({ encryption }) {
     <div className="peer-send-container">
       <h3 className="section-title">
         <Wifi size={20} />
-        P2P Send
+        P2P Send Mesh
       </h3>
 
       {!file ? (
@@ -247,7 +302,7 @@ export default function PeerSend({ encryption }) {
               <Wifi size={48} />
             </div>
             <p className="drop-title">Drop your file here</p>
-            <p className="drop-subtitle">or click to browse • No size limit in P2P mode</p>
+            <p className="drop-subtitle">or click to browse • Support multi-user concurrent push</p>
           </div>
         </div>
       ) : (
@@ -265,7 +320,6 @@ export default function PeerSend({ encryption }) {
 
           {status === 'idle' && (
             <>
-              {/* Key Sharing Mode Selector */}
               <div className="key-mode-selector">
                 <div className="key-mode-header">
                   <KeyRound size={16} />
@@ -305,11 +359,6 @@ export default function PeerSend({ encryption }) {
                 </div>
               </div>
 
-              <button className="btn-primary btn-p2p" onClick={startSharing}>
-                <Wifi size={18} />
-                Start P2P Session
-              </button>
-
               <div className="p2p-options-row">
                 <label className="p2p-toggle">
                   <input 
@@ -319,25 +368,37 @@ export default function PeerSend({ encryption }) {
                   />
                   <span className="toggle-slider"></span>
                   <div className="toggle-label">
-                    <span>Unlimited Session</span>
-                    <p>Room stays active until you close this tab</p>
+                    <span>Unlimited Connections</span>
+                    <p>Allows multiple users to download simultaneously</p>
                   </div>
                 </label>
               </div>
+
+              <button className="btn-primary btn-p2p" onClick={startSharing}>
+                <Wifi size={18} />
+                Start Mesh Session
+              </button>
             </>
           )}
 
           {status === 'creating' && (
             <div className="status-section">
               <Loader size={24} className="spin" />
-              <p>Creating secure room...</p>
+              <p>Creating secure hub...</p>
             </div>
           )}
 
-          {status === 'waiting' && (
+          {status === 'encrypting' && (
+            <div className="status-section">
+              <Loader size={24} className="spin" />
+              <p>Encrypting file for broadcast...</p>
+            </div>
+          )}
+
+          {status === 'ready' && (
             <div className="waiting-section">
               <div className="room-code">
-                <p className="room-label">Share this link with the receiver:</p>
+                <p className="room-label">Share this link with receivers:</p>
                 <div className="room-id-display">
                   <span className="room-id">{roomId}</span>
                   <button className="btn-copy" onClick={copyRoomId}>
@@ -345,75 +406,65 @@ export default function PeerSend({ encryption }) {
                     {copied ? 'Copied!' : 'Copy Link'}
                   </button>
                 </div>
-                {keyMode === 'separate' && (
-                  <p className="room-key-note">
-                    <KeyRound size={14} />
-                    Key will be shown after transfer completes. Share it separately.
-                  </p>
+                
+                {keyMode === 'separate' && sharedKey && (
+                  <div style={{marginTop: '15px'}} className="share-key-box p2p-key-box">
+                    <div className="share-key-header">
+                      <KeyRound size={16} />
+                      <p className="share-label">Decryption Key (share separately):</p>
+                    </div>
+                    <div className="share-link-input">
+                      <input type="text" value={sharedKey} readOnly className="key-input-field" />
+                      <button className="btn-copy btn-copy-key" onClick={copyKey}>
+                        {copiedKey ? <CheckCircle size={16} /> : <Copy size={16} />}
+                        {copiedKey ? 'Copied!' : 'Copy Key'}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
+              
               <div className="waiting-animation">
                 <Users size={32} />
-                <p>Waiting for receiver to join...</p>
+                <p>Mesh hub active. Waiting for receivers to join...</p>
                 <div className="pulse-dots">
                   <span></span><span></span><span></span>
                 </div>
               </div>
-            </div>
-          )}
 
-          {status === 'connected' && (
-            <div className="status-section connected">
-              <CheckCircle size={24} />
-              <p>Peer connected! Establishing secure channel...</p>
-            </div>
-          )}
-
-          {status === 'encrypting' && (
-            <div className="status-section">
-              <Loader size={24} className="spin" />
-              <p>Encrypting file...</p>
-            </div>
-          )}
-
-          {status === 'sending' && (
-            <div className="progress-section">
-              <div className="progress-bar">
-                <div className="progress-fill p2p-fill" style={{ width: `${progress}%` }}></div>
-              </div>
-              <p className="progress-text">
-                Sending encrypted data... {progress}%
-              </p>
-            </div>
-          )}
-
-          {status === 'done' && (
-            <div className="success-section">
-              <CheckCircle size={48} />
-              <h3>Transfer Complete!</h3>
-              <p>File sent securely via P2P connection.</p>
-
-              {/* Show key for separate sharing */}
-              {keyMode === 'separate' && sharedKey && (
-                <div className="share-key-box p2p-key-box">
-                  <div className="share-key-header">
-                    <KeyRound size={16} />
-                    <p className="share-label">Decryption Key (share separately):</p>
-                  </div>
-                  <div className="share-link-input">
-                    <input type="text" value={sharedKey} readOnly className="key-input-field" />
-                    <button className="btn-copy btn-copy-key" onClick={copyKey}>
-                      {copiedKey ? <CheckCircle size={16} /> : <Copy size={16} />}
-                      {copiedKey ? 'Copied!' : 'Copy Key'}
-                    </button>
-                  </div>
-                  <p className="share-note share-note-key">
-                    🔑 The receiver needs this key to decrypt the file. Share it through a different channel.
-                  </p>
-                </div>
+              {Object.keys(activePeers).length > 0 && (
+                 <div className="active-peers-container" style={{ marginTop: '30px', textAlign: 'left' }}>
+                     <h4 style={{marginBottom: '15px', color: '#ffb347', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <Users size={18} /> Concurrent Receivers ({Object.keys(activePeers).length})
+                     </h4>
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                         {Object.values(activePeers).map(peer => (
+                             <div key={peer.id} className="peer-card" style={{ padding: '15px', background: 'rgba(255,179,71,0.05)', border: '1px solid rgba(255,179,71,0.2)', borderRadius: '12px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.9rem', color: '#e0e0e0' }}>
+                                     <span style={{fontFamily: 'monospace'}}>ID: {peer.id.substring(0,8)}</span>
+                                     <span style={{ 
+                                         textTransform: 'capitalize', 
+                                         fontWeight: 600,
+                                         color: peer.state === 'done' ? '#4caf50' : peer.state === 'error' ? '#f44336' : '#ffb347'
+                                     }}>
+                                         {peer.state === 'error' ? 'Failed' : peer.state}
+                                     </span>
+                                 </div>
+                                 <div className="progress-bar" style={{height: '6px', background: 'rgba(0,0,0,0.3)', borderRadius: '3px'}}>
+                                    <div className="progress-fill p2p-fill" style={{ width: `${peer.progress}%`, borderRadius: '3px' }}></div>
+                                 </div>
+                                 {peer.errorMsg && <p style={{color: '#f44336', fontSize:'0.8rem', marginTop: '8px'}}>{peer.errorMsg}</p>}
+                             </div>
+                         ))}
+                     </div>
+                 </div>
               )}
-
-              <button className="btn-secondary" onClick={reset}>Send Another File</button>
+              
+              {Object.values(activePeers).length > 0 && Object.values(activePeers).every(p => p.state === 'done' || p.state === 'error') && (
+                 <div style={{marginTop: '20px'}}>
+                     <button className="btn-secondary" onClick={reset}>Close Hub & Send Another</button>
+                 </div>
+              )}
             </div>
           )}
 
@@ -422,11 +473,9 @@ export default function PeerSend({ encryption }) {
               <AlertCircle size={24} />
               <p>{error}</p>
               <div className="error-actions">
-                <button className="btn-primary" onClick={startSharing}>
-                  <Wifi size={18} />
-                  Retry Connection
+                <button className="btn-primary" onClick={reset}>
+                  Reset
                 </button>
-                <button className="btn-secondary" onClick={reset}>Cancel</button>
               </div>
             </div>
           )}
