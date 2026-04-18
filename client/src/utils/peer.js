@@ -149,13 +149,8 @@ export function receiveFileData(dataChannel, expectedSize, onProgress) {
 
     dataChannel.onmessage = (event) => {
       if (typeof event.data === 'string' && event.data === '__EOF__') {
-        const fullData = new Uint8Array(receivedSize);
-        let offset = 0;
-        for (const chunk of chunks) {
-          fullData.set(new Uint8Array(chunk), offset);
-          offset += chunk.byteLength;
-        }
-        resolve(fullData.buffer);
+        const blob = new Blob(chunks);
+        resolve(blob);
         return;
       }
 

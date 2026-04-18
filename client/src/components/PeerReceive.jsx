@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Download, Wifi, CheckCircle, AlertCircle, Loader, ShieldCheck, Hash, Lock, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { decryptFile, formatFileSize } from '../utils/crypto';
 import { joinRoom, getSocket, receiveFileData, ICE_SERVERS_CONFIG } from '../utils/peer';
+import { saveAs } from 'file-saver';
 
 export default function PeerReceive() {
   const { roomId: urlRoomId } = useParams();
@@ -13,11 +14,11 @@ export default function PeerReceive() {
   const [error, setError] = useState('');
   const [manualKey, setManualKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [encryptedBuffer, setEncryptedBuffer] = useState(null);
-  const [downloadUrl, setDownloadUrl] = useState('');
+  const [decryptedBlob, setDecryptedBlob] = useState(null);
   
   const pcRef = useRef(null);
   const metaRef = useRef(null);
+  const encryptedBlobRef = useRef(null);
 
   useEffect(() => {
     if (urlRoomId) {
@@ -122,7 +123,7 @@ export default function PeerReceive() {
         dataChannel.binaryType = 'arraybuffer';
 
         const meta = metaRef.current;
-        const encryptedData = await receiveFileData(
+        const encryptedBlob = await receiveFileData(
           dataChannel,
           meta?.encryptedSize || 0,
           (p) => setProgress(Math.round(p * 100))
@@ -137,7 +138,7 @@ export default function PeerReceive() {
 
         // Check if key was included in metadata
         if (!currentMeta.keyBase64 || currentMeta.keyIncluded === false) {
-          setEncryptedBuffer(encryptedData);
+          encryptedBlobRef.current = encryptedBlob;
           setStatus('needsKey');
           return;
         }
@@ -145,17 +146,18 @@ export default function PeerReceive() {
         // Key included — auto-decrypt
         try {
           setStatus('decrypting');
-          const decryptedData = await decryptFile(
-            encryptedData,
+          const decryptedBuffer = await decryptFile(
+            await encryptedBlob.arrayBuffer(),
             currentMeta.keyBase64,
             currentMeta.iv,
             currentMeta.sha256Hash
           );
 
-          // Save file blob to memory URL
-          const blob = new Blob([decryptedData], { type: currentMeta.mimeType || 'application/octet-stream' });
-          const url = URL.createObjectURL(blob);
-          setDownloadUrl(url);
+          // Reclaim memory for encrypted blob immediately
+          encryptedBlobRef.current = null;
+
+          const blob = new Blob([decryptedBuffer], { type: currentMeta.mimeType || 'application/octet-stream' });
+          setDecryptedBlob(blob);
           setStatus('done');
         } catch (err) {
           setError(err.message);
@@ -180,7 +182,7 @@ export default function PeerReceive() {
   };
 
   const handleManualDecrypt = async () => {
-    if (!manualKey.trim() || !encryptedBuffer) return;
+    if (!manualKey.trim() || !encryptedBlobRef.current) return;
 
     const currentMeta = metaRef.current;
     if (!currentMeta) {
@@ -191,17 +193,18 @@ export default function PeerReceive() {
 
     try {
       setStatus('decrypting');
-      const decryptedData = await decryptFile(
-        encryptedBuffer,
+      const decryptedBuffer = await decryptFile(
+        await encryptedBlobRef.current.arrayBuffer(),
         manualKey.trim(),
         currentMeta.iv,
         currentMeta.sha256Hash
       );
 
-      const blob = new Blob([decryptedData], { type: currentMeta.mimeType || 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      setDownloadUrl(url);
-      
+      // Reclaim memory
+      encryptedBlobRef.current = null;
+
+      const blob = new Blob([decryptedBuffer], { type: currentMeta.mimeType || 'application/octet-stream' });
+      setDecryptedBlob(blob);
       setStatus('done');
     } catch (err) {
       setError('Decryption failed. Please check that the key is correct.');
@@ -209,13 +212,15 @@ export default function PeerReceive() {
     }
   };
 
+  const handleDownloadClick = () => {
+    if (!decryptedBlob || !fileMeta) return;
+    saveAs(decryptedBlob, fileMeta.originalName || 'received_file');
+  };
+
   const reset = () => {
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
-    }
-    if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
     }
     setStatus('idle');
     setRoomId('');
@@ -223,8 +228,8 @@ export default function PeerReceive() {
     setProgress(0);
     setError('');
     setManualKey('');
-    setEncryptedBuffer(null);
-    setDownloadUrl('');
+    setDecryptedBlob(null);
+    encryptedBlobRef.current = null;
     metaRef.current = null;
   };
 
@@ -415,13 +420,13 @@ export default function PeerReceive() {
               </div>
             )}
             
-            {downloadUrl && (
-                <a href={downloadUrl} download={fileMeta?.originalName || 'received_file'} style={{textDecoration:'none', width:'100%'}}>
-                    <button className="btn-primary" style={{width: '100%', marginBottom: '10px', fontSize: '1.05rem', padding: '14px'}}>
-                       <Download size={20} /> Download File
-                    </button>
-                </a>
-            )}
+            <button 
+              className="btn-primary" 
+              onClick={handleDownloadClick}
+              style={{width: '100%', marginBottom: '10px', fontSize: '1.05rem', padding: '14px'}}
+            >
+               <Download size={20} /> Download File
+            </button>
             
             <button className="btn-secondary" onClick={reset} style={{width: '100%'}}>
               Receive Another File
