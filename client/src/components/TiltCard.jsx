@@ -8,6 +8,9 @@ export default function TiltCard({ children, className = '' }) {
 
   const handleMouseMove = (e) => {
     if (!cardRef.current) return;
+    
+    // Disable tilt on touch devices to prevent scrolling interference
+    if (window.matchMedia('(pointer: coarse)').matches) return;
 
     const rect = cardRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left; // x position within the element.
