@@ -1,0 +1,22 @@
+.tilt-card {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  transition: transform 0.1s ease;
+  transform: rotateX(var(--rotateX, 0deg)) rotateY(var(--rotateY, 0deg));
+}
+
+.tilt-card-spotlight {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.5s ease;
+}
+
+.tilt-card-content {
+  position: relative;
+  z-index: 2;
+  /* Slight push forward in 3D space to pop out of the background */
+  transform: translateZ(20px);
+}
