@@ -16,19 +16,33 @@ export default function FileDownload() {
   const [showKey, setShowKey] = useState(false);
 
   // Parse key, iv, hash from URL fragment
-  const getFragmentParams = () => {
-    const hash = location.hash.substring(1);
-    const params = new URLSearchParams(hash);
+  const getFragmentParams = (customHash = null) => {
+    // Use either a provided hash string or look at the current location
+    const hashStr = customHash || location.hash || window.location.hash;
+    const cleanHash = hashStr.startsWith('#') ? hashStr.substring(1) : hashStr;
+    const params = new URLSearchParams(cleanHash);
+    
     return {
-      key: decodeURIComponent(params.get('key') || ''),
-      iv: decodeURIComponent(params.get('iv') || ''),
+      key: params.get('key') || '',
+      iv: params.get('iv') || '',
       sha256Hash: params.get('hash') || null
     };
   };
 
   useEffect(() => {
     fetchFileInfo();
-  }, [fileId]);
+    
+    // Listen for hash changes in case user pastes fragment manually
+    const handleHashChange = () => {
+      const { key } = getFragmentParams();
+      if (key && status === 'needsKey') {
+        setStatus('ready');
+      }
+    };
+    
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [fileId, status]);
 
   const fetchFileInfo = async () => {
     try {
@@ -203,7 +217,7 @@ export default function FileDownload() {
                 </div>
                 <div>
                   <h4>Decryption Key Required</h4>
-                  <p>The sender chose to share the key separately for extra security. Paste the key below to decrypt.</p>
+                  <p>The sender chose to share the key separately, OR the link was truncated by your messaging app. Paste the key or the <b>full link</b> below.</p>
                 </div>
               </div>
               <div className="manual-key-input-group">
@@ -211,9 +225,22 @@ export default function FileDownload() {
                   <input
                     type={showKey ? 'text' : 'password'}
                     className="manual-key-input"
-                    placeholder="Paste decryption key here..."
+                    placeholder="Paste key or full link here..."
                     value={manualKey}
-                    onChange={(e) => setManualKey(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Detect if a full link was pasted
+                      if (val.includes('#key=')) {
+                        const hashPart = val.substring(val.indexOf('#'));
+                        const params = getFragmentParams(hashPart);
+                        if (params.key) {
+                          setManualKey(params.key);
+                          // Auto-fill IV and other params implicitly via getFragmentParams in handleDownload
+                          return;
+                        }
+                      }
+                      setManualKey(val);
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleManualKeySubmit()}
                   />
                   <button
