@@ -7,6 +7,7 @@
   </p>
   
   <p align="center">
+    <a href="https://cipher-drop-three.vercel.app/"><img src="https://img.shields.io/badge/Live%20Demo-Vercel-blueviolet?style=for-the-badge&logo=vercel" alt="Live Demo"></a>
     <a href="#"><img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge" alt="Maintained"></a>
     <a href="#"><img src="https://img.shields.io/badge/Security-AES--256--GCM-black.svg?style=for-the-badge&logo=shield" alt="AES-256"></a>
     <a href="#"><img src="https://img.shields.io/badge/Network-WebRTC%20P2P-orange.svg?style=for-the-badge&logo=webrtc" alt="WebRTC"></a>
