@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CipherDrop Project Report</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --panel: #f8fafc;
+      --accent: #0ea5e9;
+      --accent-dark: #0369a1;
+      --ok: #0f766e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+      background: #ffffff;
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    .print-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 12px;
+    }
+
+    .print-tools p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .meta {
+      margin-top: 10px;
+      color: var(--ok);
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    h2 {
+      margin-top: 36px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--line);
+      font-size: 24px;
+    }
+
+    h3 {
+      margin-top: 26px;
+      margin-bottom: 8px;
+      font-size: 19px;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    ul {
+      margin: 8px 0 8px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 16px;
+      margin: 12px 0;
+    }
+
+    .small-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    pre {
+      margin: 12px 0 18px;
+      padding: 14px;
+      border: 1px solid #dbe6f0;
+      border-radius: 10px;
+      background: #0b1220;
+      color: #e2e8f0;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    code {
+      font-family: Consolas, "Cascadia Code", "Courier New", monospace;
+    }
+
+    .files-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    .files-table th,
+    .files-table td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    .files-table th {
+      background: #f1f5f9;
+      width: 28%;
+    }
+
+    .output-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .output-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .output-card h4 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .output-card img {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0f172a;
+      display: block;
+    }
+
+    .footer {
+      margin-top: 40px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 16px;
+      }
+
+      .output-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+
+      .print-tools {
+        display: none;
+      }
+
+      /* Start each new topic on a fresh page (except the first topic). */
+      .topic + .topic {
+        page-break-before: always;
+        break-before: page;
+      }
+
+      .topic {
+        page-break-inside: avoid;
+        break-inside: avoid-page;
+      }
+
+      h2,
+      h3 {
+        page-break-after: avoid;
+        break-after: avoid-page;
+      }
+
+      /* Keep blocks together as much as possible to reduce awkward splits. */
+      .panel,
+      .files-table,
+      .files-table thead,
+      .files-table tbody,
+      .files-table tr,
+      .files-table th,
+      .files-table td,
+      pre,
+      .output-grid,
+      .output-card {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="print-tools">
+      <p>This report is formatted for direct print or PDF export.</p>
+      <button class="btn" onclick="window.print()">Print / Save PDF</button>
+    </div>
+
+    <h1>CipherDrop Project Report</h1>
+    <p class="subtitle">Secure End-to-End Encrypted File Sharing with Server Relay and WebRTC P2P Mesh</p>
+    <p class="meta">Prepared Date: 18 April 2026</p>
+
+    <section class="topic">
+    <h2>1. Project Overview</h2>
+    <p>
+      CipherDrop is a secure file sharing platform built with a React frontend and Node.js backend.
+      The application encrypts files in the browser before upload and supports two transmission models:
+      server-relay mode for asynchronous sharing and direct WebRTC peer-to-peer mode for live transfer.
+    </p>
+    <p>
+      The design follows a zero-knowledge approach. Encryption keys are never sent to the backend in plaintext.
+      In URL-key mode, keys are stored in URL fragments (the <code>#</code> section), which are not transmitted to servers by browsers.
+    </p>
+
+    <div class="panel">
+      <strong>Main Functional Goals</strong>
+      <ul>
+        <li>Client-side AES-256-GCM encryption and decryption.</li>
+        <li>Optional SHA-256 integrity verification.</li>
+        <li>Temporary encrypted file storage with expiry controls.</li>
+        <li>Real-time, direct WebRTC transfer using signaling through Socket.IO.</li>
+      </ul>
+    </div>
+    </section>
+
+    <section class="topic">
+    <h2>2. Technology Stack</h2>
+    <ul>
+      <li>Frontend: React (Vite), React Router, Lucide Icons, Web Crypto API</li>
+      <li>Backend: Node.js, Express, Socket.IO, Multer</li>
+      <li>Data Layer: Redis for metadata and TTL expiration</li>
+      <li>Networking: WebRTC with STUN/TURN configuration</li>
+      <li>Security Controls: CORS policy, rate limiting, encrypted data at rest and in transit</li>
+    </ul>
+    </section>
+
+    <section class="topic">
+    <h2>3. Core Project Files</h2>
+    <table class="files-table">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>client/index.html</td>
+          <td>Frontend HTML shell and CSP/meta setup.</td>
+        </tr>
+        <tr>
+          <td>client/src/main.jsx</td>
+          <td>React root bootstrap and app mounting.</td>
+        </tr>
+        <tr>
+          <td>client/src/App.jsx</td>
+          <td>Main application routes and send/receive flows.</td>
+        </tr>
+        <tr>
+          <td>client/src/utils/crypto.js</td>
+          <td>Browser-side encryption/decryption and hash verification logic.</td>
+        </tr>
+        <tr>
+          <td>server/index.js</td>
+          <td>Express server setup, CORS/rate-limits, Socket.IO signaling, room lifecycle.</td>
+        </tr>
+        <tr>
+          <td>server/routes/files.js</td>
+          <td>Upload/download endpoints, metadata storage in Redis, cleanup routines.</td>
+        </tr>
+      </tbody>
+    </table>
+    </section>
+
+    <section class="topic">
+    <h2>4. Main Frontend Code</h2>
+
+    <h3>4.1 client/index.html (Main HTML Entry)</h3>
+    <pre><code>&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+  &lt;head&gt;
+    &lt;meta charset="UTF-8" /&gt;
+    &lt;meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ws: wss: stun: turn: *;"&gt;
+    &lt;link rel="icon" type="image/svg+xml" href="/favicon.svg" /&gt;
+    &lt;meta name="viewport" content="width=device-width, initial-scale=1.0" /&gt;
+    &lt;meta name="description" content="CipherDrop - Share files securely with end-to-end encryption. Server relay or peer-to-peer transfer with AES-256 and SHA-256." /&gt;
+    &lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
+    &lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
+    &lt;link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Outfit:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"&gt;
+    &lt;title&gt;CipherDrop - E2E Encrypted File Sharing&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id="root"&gt;&lt;/div&gt;
+    &lt;script type="module" src="/src/main.jsx"&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+    <h3>4.2 client/src/main.jsx (React Bootstrap)</h3>
+    <pre><code>import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  &lt;StrictMode&gt;
+    &lt;App /&gt;
+  &lt;/StrictMode&gt;,
+)</code></pre>
+
+    <h3>4.3 client/src/App.jsx (Main App Routing and Modes)</h3>
+    <pre><code>function App() {
+  const [splashDone, setSplashDone] = useState(false);
+
+  const handleSplashComplete = useCallback(() =&gt; {
+    setSplashDone(true);
+  }, []);
+
+  return (
+    &lt;Router&gt;
+      {!splashDone &amp;&amp; &lt;WebsiteStartEffect onComplete={handleSplashComplete} /&gt;}
+      &lt;div className={`app-root ${splashDone ? 'app-visible' : 'app-hidden'}`}&gt;
+        &lt;Routes&gt;
+          &lt;Route path="/" element={&lt;HomePage /&gt;} /&gt;
+          &lt;Route path="/download/:fileId" element={&lt;DownloadPage /&gt;} /&gt;
+          &lt;Route path="/receive/:roomId" element={&lt;ReceivePage /&gt;} /&gt;
+          &lt;Route path="/receive" element={&lt;ReceivePage /&gt;} /&gt;
+        &lt;/Routes&gt;
+      &lt;/div&gt;
+    &lt;/Router&gt;
+  );
+}</code></pre>
+
+    <h3>4.4 client/src/utils/crypto.js (Encryption Core)</h3>
+    <pre><code>export async function generateAESKey() {
+  const key = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  return key;
+}
+
+export async function encryptAES(data, key) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  return {
+    encrypted,
+    iv: arrayBufferToBase64(iv.buffer)
+  };
+}
+
+export async function encryptFile(file, encryptionType) {
+  const data = await file.arrayBuffer();
+  const key = await generateAESKey();
+  const keyBase64 = await exportKey(key);
+
+  const { encrypted, iv } = await encryptAES(data, key);
+
+  let sha256Hash = null;
+  if (encryptionType === 'SHA') {
+    sha256Hash = await computeSHA256(data);
+  }
+
+  return {
+    encryptedBlob: new Blob([encrypted]),
+    keyBase64,
+    iv,
+    sha256Hash,
+    originalName: file.name,
+    mimeType: file.type,
+    originalSize: file.size
+  };
+}</code></pre>
+    </section>
+
+    <section class="topic">
+    <h2>5. Main Backend Code</h2>
+
+    <h3>5.1 server/index.js (Express + Socket.IO Signaling)</h3>
+    <pre><code>require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+const { router: filesRouter, deleteLocalFile } = require('./routes/files');
+
+const app = express();
+const server = http.createServer(app);
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) callback(null, true);
+    else callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST']
+};
+
+const io = new Server(server, {
+  cors: corsOptions,
+  maxHttpBufferSize: 1e8
+});
+
+app.use(cors(corsOptions));
+app.use(express.json());
+app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+app.use('/api', filesRouter);
+
+const rooms = new Map();
+const socketToFiles = new Map();
+
+io.on('connection', (socket) =&gt; {
+  socket.on('create-room', (callback) =&gt; {
+    const roomId = crypto.randomBytes(3).toString('hex').toUpperCase();
+    rooms.set(roomId, {
+      sender: socket.id,
+      receivers: new Set(),
+      createdAt: new Date(),
+      unlimited: false
+    });
+    socket.join(roomId);
+    callback({ roomId });
+  });
+
+  socket.on('join-room', (roomId, callback) =&gt; {
+    const room = rooms.get(roomId);
+    if (!room) return callback({ error: 'Room not found' });
+    room.receivers.add(socket.id);
+    socket.join(roomId);
+    io.to(room.sender).emit('peer-joined', { peerId: socket.id });
+    callback({ success: true });
+  });
+
+  socket.on('signal-ready', ({ roomId }) =&gt; {
+    const room = rooms.get(roomId);
+    if (room &amp;&amp; room.sender) {
+      io.to(room.sender).emit('signal-ready', { from: socket.id });
+    }
+  });
+
+  socket.on('signal-offer', ({ offer, target }) =&gt; {
+    if (target) io.to(target).emit('signal-offer', { offer });
+  });
+
+  socket.on('signal-answer', ({ roomId, answer }) =&gt; {
+    const room = rooms.get(roomId);
+    if (room &amp;&amp; room.sender) {
+      io.to(room.sender).emit('signal-answer', { from: socket.id, answer });
+    }
+  });
+
+  socket.on('disconnect', async () =&gt; {
+    if (socketToFiles.has(socket.id)) {
+      const fileIds = socketToFiles.get(socket.id);
+      for (const fileId of fileIds) await deleteLocalFile(fileId);
+      socketToFiles.delete(socket.id);
+    }
+  });
+});
+
+server.listen(process.env.PORT || 3001);</code></pre>
+
+    <h3>5.2 server/routes/files.js (Encrypted Upload, Metadata TTL, Download)</h3>
+    <pre><code>const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const { createClient } = require('redis');
+
+const router = express.Router();
+const FILE_SIZE_LIMIT = 100 * 1024 * 1024;
+
+const redisClient = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
+redisClient.connect();
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) =&gt; {
+      const uploadDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) =&gt; {
+      const fileId = uuidv4();
+      req.fileId = fileId;
+      cb(null, fileId);
+    }
+  }),
+  limits: { fileSize: FILE_SIZE_LIMIT }
+});
+
+router.post('/upload', upload.single('file'), async (req, res) =&gt; {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const fileId = req.file.filename;
+  let expiryMinutes = parseInt(req.body.expiryMinutes) || 1440;
+  if (expiryMinutes &lt; 1) expiryMinutes = 1;
+  if (expiryMinutes &gt; 1440) expiryMinutes = 1440;
+
+  const metadata = {
+    id: fileId,
+    originalName: req.body.originalName || 'unknown',
+    mimeType: req.body.mimeType || 'application/octet-stream',
+    size: req.file.size,
+    encryptionType: req.body.encryptionType || 'AES',
+    sha256Hash: req.body.sha256Hash || null,
+    iv: req.body.iv || null,
+    uploadedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString()
+  };
+
+  await redisClient.set(`file:${fileId}`, JSON.stringify(metadata), {
+    EX: expiryMinutes * 60
+  });
+
+  res.json({ success: true, fileId });
+});
+
+router.get('/download/:id', async (req, res) =&gt; {
+  const fileId = req.params.id;
+  const data = await redisClient.get(`file:${fileId}`);
+  if (!data) return res.status(404).json({ error: 'File not found or expired' });
+
+  const metadata = JSON.parse(data);
+  const filePath = path.join(__dirname, '..', 'uploads', fileId);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+  const safeFilename = encodeURIComponent(metadata.originalName || 'file') + '.enc';
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+  fs.createReadStream(filePath).pipe(res);
+});</code></pre>
+
+    <p class="small-note">
+      Note: The report includes the core backend logic. The full implementations remain in
+      <strong>server/index.js</strong> and <strong>server/routes/files.js</strong> inside the project.
+    </p>
+    </section>
+
+    <section class="topic">
+    <h2>6. Output Section: Actual Sharing and Receiving Results</h2>
+    <p>
+      Below are real output screenshots captured from CipherDrop for both workflows:
+      Server Relay mode and Direct P2P mode.
+    </p>
+
+    <div class="output-grid">
+      <div class="output-card">
+        <h4>Server Relay Mode - Sharing Output (Sender)</h4>
+        <img src="report-assets/output-screenshots/server_share.png" alt="Server relay mode sharing output" />
+        <p class="small-note">Encrypted upload flow with share-link generation on sender side.</p>
+      </div>
+      <div class="output-card">
+        <h4>Server Relay Mode - Receiving Output (Receiver)</h4>
+        <img src="report-assets/output-screenshots/server_receive.png" alt="Server relay mode receiving output" />
+        <p class="small-note">Receiver interface for secure file retrieval and decryption.</p>
+      </div>
+      <div class="output-card">
+        <h4>P2P Mode - Sharing Output (Sender Mesh Hub)</h4>
+        <img src="report-assets/output-screenshots/p2p_share.png" alt="P2P mode sharing output" />
+        <p class="small-note">Sender hub view showing real-time peer transfer status.</p>
+      </div>
+      <div class="output-card">
+        <h4>P2P Mode - Receiving Output (Receiver)</h4>
+        <img src="report-assets/output-screenshots/p2p_receive.png" alt="P2P mode receiving output" />
+        <p class="small-note">Receiver screen for direct peer-to-peer file reception and decrypt path.</p>
+      </div>
+    </div>
+    </section>
+
+    <section class="topic">
+    <h2>7. Conclusion</h2>
+    <p>
+      CipherDrop demonstrates a practical and secure architecture for encrypted file transfer.
+      By combining browser-native cryptography, controlled server-side metadata, and optional direct peer transfer,
+      the system provides strong confidentiality while remaining user-friendly.
+    </p>
+    <p>
+      This report captures the key implementation files requested: main HTML/entry frontend code,
+      backend server logic, API route behavior, and output image references.
+    </p>
+    </section>
+
+    <div class="footer">
+      CipherDrop Report | End-to-End Encryption Project | 2026
+    </div>
+  </div>
+</body>
+</html>
